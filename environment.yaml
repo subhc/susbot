@@ -1,0 +1,15 @@
+name: sus
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - cython
+  - pip
+  - python=3.10
+  - pip:
+      - geopy
+      - iopath
+      - slack-bolt
+      - tabulate
+      - termcolor
+      - tqdm
