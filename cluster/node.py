@@ -9,7 +9,7 @@ from utils.utils import sizeof_fmt, cache_for_n_seconds
 
 logger = get_logger(__name__)
 
-gpu_order = ['m40', 'p40', 'v100s', 'rtx6k', 'rtx8k', 'a4500', 'a40', 'a6000']
+gpu_order = ['m40', 'p40', 'v100s', 'rtx6k', 'rtx8k', 'a4500', 'a40', 'a6000'][::-1]
 
 
 def extract_useful_node_info(value_dict):
@@ -32,7 +32,7 @@ def extract_useful_node_info(value_dict):
     return SimpleNamespace(**node_info_dict)
 
 
-def format_node_info_into_blocks(node_dict):
+def format_node_info_into_blocks(node_dict, ignore_full_node=False):
     if node_dict:
         node_dict_gpu_grouped = defaultdict(dict)
         for key, value_dict in node_dict.items():
@@ -53,19 +53,21 @@ def format_node_info_into_blocks(node_dict):
 
             res += f"         Free GPU      Free CPU          Free MEM\n"
             for key, value in sorted(node_dict.items(), key=lambda x: (-x[1].gpu_free, x[0])):
+                if not gmem:
+                    gmem = value.gmem[0][4:] if len(value.gmem) > 0 else None
+                if ignore_full_node and value.gpu_free == 0:
+                    continue
                 res += f"{key}     "
                 res += f'{value.gpu_free:>1} / {value.gpu_total:>1}     '
                 res += f'{value.cpu_free:>3} / {value.cpu_total:>3}     '
                 res += f'{value.mem_free:>3} / {value.mem_total:>3} {value.mem_unit}\n'
-                if not gmem:
-                    gmem = value.gmem[0][4:] if len(value.gmem) > 0 else None
             res += "```"
 
             free_stats = f"{sum(v.gpu_free for v in node_dict.values())}/{sum(v.gpu_total for v in node_dict.values())}"
 
             blocks.append({
-                "type": "section",
-                "fields": [
+                "type": "context",
+                "elements": [
                     {
                         "type": "mrkdwn",
                         "text": f"*{node_type}*" + (f" [{gmem}]" if gmem else "")
@@ -88,19 +90,19 @@ def format_node_info_into_blocks(node_dict):
 
 @cache_for_n_seconds(seconds=2)
 def get_pyslum_node_dict():
-    return pyslurm.node().get()
+    try:
+        return pyslurm.node().get()
+    except ValueError as e:
+        logger.error(f"Error - {e.args[0]}")
+        return {}
 
 
 def get_node_info_blocks():
-    try:
-        nodes_dict = get_pyslum_node_dict()
-        if nodes_dict:
-            res = format_node_info_into_blocks(nodes_dict)
-        else:
-            logger.warning("No Nodes found!")
-            res = []
-        return res
+    nodes_dict = get_pyslum_node_dict()
+    if nodes_dict:
+        res = format_node_info_into_blocks(nodes_dict)
+    else:
+        logger.warning("No Nodes found!")
+        res = []
+    return res
 
-    except ValueError as e:
-        logger.error(f"Error - {e.args[0]}")
-        return []

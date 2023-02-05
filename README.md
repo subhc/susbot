@@ -1,4 +1,5 @@
-# `susbot`: Slurm and other Utilities Slack Bot
+#  <img style="padding-top:60px" height=80 src="https://static.wikia.nocookie.net/among-us-wiki/images/c/c7/Red_old_design.png"></img> `susbot` : Slurm and other Utilities Slack Bot </span>
+
 [WIP] Provides helper commands related to an ML research Slack group. Mostly related to a slurm cluster. 
 
 Available commands:
@@ -34,6 +35,8 @@ pip install .
 ```
 
 ### Running the app
+
+Run it on a node with access to the cluster.
 ```commandline 
 python app.py
 ```
