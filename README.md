@@ -1,4 +1,4 @@
-#  <img style="padding-top:60px" height=80 src="https://static.wikia.nocookie.net/among-us-wiki/images/c/c7/Red_old_design.png"></img> `susbot` : Slurm and other Utilities Slack Bot </span>
+#  <img style="padding-top:10px" height=35 src="https://static.wikia.nocookie.net/among-us-wiki/images/c/c7/Red_old_design.png"></img> `susbot` : Slurm and other Utilities Slack Bot </span>
 
 [WIP] Provides helper commands related to an ML research Slack group. Mostly related to a slurm cluster. 
 
@@ -9,7 +9,7 @@ Available commands:
 ## Getting Started
 
 ### Prerequisites
-Create a Slack bot app with appropriate permissions (`chat:write`, `command`) and get the Slack tokens. You can find more information on how to do this [here](https://api.slack.com/start/building/bolt-python).
+Create a Slack bot app with appropriate scope (`chat:write`, `command`, `im:history`) and get the Slack tokens. Subscribe to events `app_home_opened`, `message.im`. You can find more information on how to do this [here](https://api.slack.com/start/building/bolt-python).
 
 
 `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` environment variables are required to run the app. 

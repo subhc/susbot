@@ -53,26 +53,37 @@ def get_node_info_blocks(ignore_full_node=False):
             if job_info["job_state"] == "RUNNING":
                 node_user_dict[job_info["batch_host"]].add(users_dict[job_info["user_id"]])
 
+        cluster_summary_dict = defaultdict(dict)
         for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(gpu_order)) + gpu_order:
             node_dict = node_dict_gpu_grouped[node_type]
-            res = "```"
             gmem = None
-
-            res += f"         free_gpu   free_cpu       free_mem    users\n"
+            cluster_summary_dict[node_type] = {}
+            rows = []
             for key, value in sorted(node_dict.items(), key=lambda x: (-x[1].gpu_free, x[0])):
                 if not gmem:
                     gmem = value.gmem[0][4:] if len(value.gmem) > 0 else None
                 if ignore_full_node and value.gpu_free == 0:
                     continue
-                res += f"{key}       "
+                res = f"{key}       "
                 res += f'{value.gpu_free:>1}/{value.gpu_total:>1}    '
                 res += f'{value.cpu_free:>3}/{value.cpu_total:>3}    '
                 res += f'{value.mem_free:>3}/{value.mem_total:>3} {value.mem_unit}    '
-                res += f"{','.join(sorted(node_user_dict[key]))}\n"
-            res += "```"
+                res += f"{','.join(sorted(node_user_dict[key]))}" if len(node_user_dict[key]) > 0 else "--"
+                rows.append(res)
 
+            cluster_summary_dict[node_type]['table_rows'] = rows
+            cluster_summary_dict[node_type]['gmem'] = gmem
             free_stats = f"{sum(v.gpu_free for v in node_dict.values())}/{sum(v.gpu_total for v in node_dict.values())}"
+            cluster_summary_dict[node_type]['free_stats'] = free_stats
 
+        width_rows = max([len(row) for summary_dict in cluster_summary_dict.values() for row in summary_dict['table_rows']])
+
+        for node_type, node_type_summary_dict in cluster_summary_dict.items():
+            gmem, free_stats = node_type_summary_dict['gmem'], node_type_summary_dict['free_stats']
+            res = "```"
+            res += f"         free_gpu   free_cpu       free_mem    users".ljust(width_rows)+"\n"
+            res += "\n".join(f"{row}".ljust(width_rows) for row in node_type_summary_dict['table_rows'])
+            res += "```"
             blocks.append({
                 "type": "context",
                 "elements": [
