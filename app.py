@@ -73,18 +73,25 @@ def update_home_tab(client, event, logger):
         logger.error(f"Failed to publish home tab: {e}")
 
 
+def command_cluster_stats(user_id):
+    return [{
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": f"*Hi <@{user_id}>* :wave:\nHere is the GPU availability summary ({datetime.now().strftime('%m/%d/%Y, %H:%M:%S')})",
+        }
+    }, *get_node_info_blocks()]
+
+
 @app.command("/cluster")
 def scan_cluster(ack, body):
-    user_id = body["user_id"]
-    ack(
-        blocks=[{
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Hi <@{user_id}>* :wave:\nHere is the GPU availability summary ({datetime.now().strftime('%m/%d/%Y, %H:%M:%S')})",
-            }
-        }, *get_node_info_blocks()]
-    )
+    ack(blocks=command_cluster_stats(body["user_id"]))
+
+
+@app.message("cluster")
+def say_hello_regex(message, say):
+    # logger.debug(message['text'])
+    say(blocks=command_cluster_stats(message["user"]))
 
 
 if __name__ == "__main__":
