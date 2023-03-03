@@ -5,7 +5,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.app import App
 
 from utils.log import setup_logger
-from cluster.node import get_node_info_blocks
+from cluster.node import get_node_info_blocks, get_node_user_blocks
 
 logger = setup_logger()
 
@@ -20,13 +20,13 @@ def get_home_tab_blocks(user_id):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Hi <@{user_id}>* :wave: *GPU Cluster Summary:*",
+                "text": f"*Hi <@{user_id}>* :wave: ",
             }
         }, {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"Last updated: {datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}"
+                "text": f"Last updated: {datetime.now().strftime('%m/%d/%Y, %H:%M:%S')} \n"
             },
             "accessory": {
                 "type": "button",
@@ -38,7 +38,20 @@ def get_home_tab_blocks(user_id):
                 "value": "refresh_home",
                 "action_id": "action_refresh_home"
             }
-        }, *get_node_info_blocks()
+        },{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*GPU Cluster Summary:*",
+            }
+        }, *get_node_info_blocks(),
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*User Summary:*",
+            }
+        }, *get_node_user_blocks()
     ]
 
 

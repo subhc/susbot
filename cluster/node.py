@@ -1,9 +1,10 @@
 import re
+import pwd
 
 from collections import defaultdict
 from types import SimpleNamespace
 
-from cluster.query_slurm import get_slum_node_dict, get_slum_job_dict, get_users_dict
+from cluster.query_slurm import get_slum_node_dict, get_slum_job_dict
 from utils.log import get_logger
 from utils.utils import sizeof_fmt
 
@@ -47,11 +48,10 @@ def get_node_info_blocks(ignore_full_node=False):
 
         blocks = []
         job_dict = get_slum_job_dict()
-        users_dict = get_users_dict()
         node_user_dict = defaultdict(set)
         for job_id, job_info in job_dict.items():
             if job_info["job_state"] == "RUNNING":
-                node_user_dict[job_info["batch_host"]].add(users_dict[job_info["user_id"]])
+                node_user_dict[job_info["batch_host"]].add(pwd.getpwuid(job_info["user_id"]).pw_name)
 
         cluster_summary_dict = defaultdict(dict)
         for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(gpu_order)) + gpu_order:
@@ -76,7 +76,7 @@ def get_node_info_blocks(ignore_full_node=False):
             free_stats = f"{sum(v.gpu_free for v in node_dict.values())}/{sum(v.gpu_total for v in node_dict.values())}"
             cluster_summary_dict[node_type]['free_stats'] = free_stats
 
-        width_rows = max([len(row) for summary_dict in cluster_summary_dict.values() for row in summary_dict['table_rows']])
+        width_rows = max([len(row) for summary_dict in cluster_summary_dict.values() for row in summary_dict['table_rows']]) + 4
 
         for node_type, node_type_summary_dict in cluster_summary_dict.items():
             gmem, free_stats = node_type_summary_dict['gmem'], node_type_summary_dict['free_stats']
@@ -104,6 +104,54 @@ def get_node_info_blocks(ignore_full_node=False):
                     "text": res,
                 }],
             })
+        return blocks
+    else:
+        logger.warning("No Nodes found!")
+        return []
+
+
+def get_node_user_blocks(ignore_full_node=False):
+    if job_dict := get_slum_job_dict():
+        node_dict = get_slum_node_dict()
+        node_type_map = {}
+        for key, value_dict in node_dict.items():
+            if len(value_dict['gres']) == 0:  # no gpu in the node
+                continue
+            else:
+                if len(value_dict['gres']) > 1:
+                    logger.warning(f"gres length > 1 {value_dict['gres']}")
+
+                node_type = value_dict['gres'][0].split(":")[1]
+                node_type_map[key] = node_type
+
+        node_dict_user_grouped = defaultdict(lambda : defaultdict(int))
+        for job_id, job_info in job_dict.items():
+
+            if job_info["job_state"] == "RUNNING" and job_info["partition"] != "compute":
+                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += 1
+                if job_info["batch_flag"] == 0:
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
+                if job_info["run_time"] < 8*60*60:
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["new"] += 1
+                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node_type_map[job_info["batch_host"]]] += 1
+
+        all_gpus = sorted(set([node_type_map[k] for k in node_dict.keys() if k in node_type_map]).difference(gpu_order)) + gpu_order
+        blocks = []
+        res = "```"
+        len_user = max([len(user) for user in node_dict_user_grouped.keys()])
+        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], x[0])):
+            row = f"{user}".ljust(len_user+1)
+            row += f' | total={value["total"]:>2} | shell={value["shell"]:>2} | <8hrs={value["new"]:>2} | ' #if node_type in value
+            row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] >0])
+            res += f"{row}   \n"
+        res += "```"
+        blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": res,
+            }],
+        })
         return blocks
     else:
         logger.warning("No Nodes found!")
