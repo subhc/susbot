@@ -9,7 +9,7 @@ Available commands:
 ## Getting Started
 
 ### Prerequisites
-Create a Slack bot app with appropriate scope (`chat:write`, `command`, `im:history`) and get the Slack tokens. Subscribe to events `app_home_opened`, `message.im`. You can find more information on how to do this [here](https://api.slack.com/start/building/bolt-python).
+Create a Slack bot app with appropriate scope (`chat:write`, `command`, `im:history`, `users:read`) and get the Slack tokens. Subscribe to events `app_home_opened`, `message.im`. You can find more information on how to do this [here](https://api.slack.com/start/building/bolt-python).
 
 
 `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` environment variables are required to run the app. 

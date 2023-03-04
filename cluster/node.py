@@ -14,6 +14,8 @@ gpu_order = ['m40', 'p40', 'v100s', 'rtx6k', 'rtx8k', 'a4500', 'a40', 'a6000'][:
 
 
 def extract_useful_node_info(value_dict):
+    gmem = re.findall(r"gmem\d+?G", value_dict["features"])
+    gmem = gmem[0][4:] if len(gmem) > 0 else None
     node_info_dict = {
         "gpu_total": int(value_dict["gres"][0].split(":")[2].split("(")[0]),
         "gpu_used": int(value_dict["gres_used"][0].split(":")[2].split("(")[0]),
@@ -22,7 +24,8 @@ def extract_useful_node_info(value_dict):
         "mem_total": sizeof_fmt(value_dict["real_memory"], with_unit=False),
         "mem_used": sizeof_fmt(value_dict["alloc_mem"], with_unit=False),
         "mem_unit": sizeof_fmt(value_dict["real_memory"], with_unit=True)[1],
-        "gmem": re.findall(r"gmem\d+?G", value_dict["features"])
+        "gmem": gmem
+
     }
     node_info_dict.update({
         "gpu_free": node_info_dict["gpu_total"] - node_info_dict["gpu_used"],
@@ -33,18 +36,23 @@ def extract_useful_node_info(value_dict):
     return SimpleNamespace(**node_info_dict)
 
 
+def extract_useful_node_info_dict(node_dict):
+    node_dict_gpu_grouped = defaultdict(dict)
+    for key, value_dict in node_dict.items():
+        if len(value_dict['gres']) == 0:  # no gpu in the node
+            continue
+        else:
+            if len(value_dict['gres']) > 1:
+                logger.warning(f"gres length > 1 {value_dict['gres']}")
+
+            node_type = value_dict['gres'][0].split(":")[1]
+            node_dict_gpu_grouped[node_type][key] = extract_useful_node_info(value_dict)
+    return node_dict_gpu_grouped
+
+
 def get_node_info_blocks(ignore_full_node=False):
     if node_dict := get_slum_node_dict():
-        node_dict_gpu_grouped = defaultdict(dict)
-        for key, value_dict in node_dict.items():
-            if len(value_dict['gres']) == 0:  # no gpu in the node
-                continue
-            else:
-                if len(value_dict['gres']) > 1:
-                    logger.warning(f"gres length > 1 {value_dict['gres']}")
-
-                node_type = value_dict['gres'][0].split(":")[1]
-                node_dict_gpu_grouped[node_type][key] = extract_useful_node_info(value_dict)
+        node_dict_gpu_grouped = extract_useful_node_info_dict(node_dict)
 
         blocks = []
         job_dict = get_slum_job_dict()
@@ -60,8 +68,8 @@ def get_node_info_blocks(ignore_full_node=False):
             cluster_summary_dict[node_type] = {}
             rows = []
             for key, value in sorted(node_dict.items(), key=lambda x: (-x[1].gpu_free, x[0])):
-                if not gmem:
-                    gmem = value.gmem[0][4:] if len(value.gmem) > 0 else None
+                if gmem is None:
+                    gmem = value.gmem
                 if ignore_full_node and value.gpu_free == 0:
                     continue
                 res = f"{key}       "
@@ -110,19 +118,12 @@ def get_node_info_blocks(ignore_full_node=False):
         return []
 
 
-def get_node_user_blocks(ignore_full_node=False):
+def get_node_user_blocks():
     if job_dict := get_slum_job_dict():
         node_dict = get_slum_node_dict()
-        node_type_map = {}
-        for key, value_dict in node_dict.items():
-            if len(value_dict['gres']) == 0:  # no gpu in the node
-                continue
-            else:
-                if len(value_dict['gres']) > 1:
-                    logger.warning(f"gres length > 1 {value_dict['gres']}")
-
-                node_type = value_dict['gres'][0].split(":")[1]
-                node_type_map[key] = node_type
+        node_dict_gpu_grouped = extract_useful_node_info_dict(node_dict)
+        node2nodeinfo = {node_name: {"gpu_name": node_type, "gpu_mem": node_info.gmem} for node_type, node_dict in node_dict_gpu_grouped.items() for node_name, node_info in node_dict.items()}
+        gpu2gmem = {node_type: node_info.gmem for node_type, node_dict in node_dict_gpu_grouped.items() for node_name, node_info in node_dict.items()}
 
         node_dict_user_grouped = defaultdict(lambda: defaultdict(int))
         for job_id, job_info in job_dict.items():
@@ -132,16 +133,26 @@ def get_node_user_blocks(ignore_full_node=False):
                 if job_info["batch_flag"] == 0:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
                 if job_info["run_time"] < 8 * 60 * 60:
-                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["new"] += 1
-                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node_type_map[job_info["batch_host"]]] += 1
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs8"] += 1
+                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += 1
 
-        all_gpus = sorted(set([node_type_map[k] for k in node_dict.keys() if k in node_type_map]).difference(gpu_order)) + gpu_order
+        unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(gpu_order)
+        new_gpus = sorted(unknown_gpus) + gpu_order[:5]
+        all_gpus = sorted(unknown_gpus) + gpu_order
+        g48_gpus = {k for k in all_gpus if gpu2gmem[k] == "48G"}
+
         blocks = []
         res = "```"
         len_user = max([len(user) for user in node_dict_user_grouped.keys()])
-        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["shell"], x[1]["new"], x[0])):
+        for user, value in node_dict_user_grouped.items():
+            new = sum([value[gpu] for gpu in new_gpus])
+            g48 = sum([value[gpu] for gpu in g48_gpus])
+            value['new'] = new
+            value['g48'] = g48
+
+        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs8"], x[0])):
             row = f"{user}".ljust(len_user + 1)
-            row += f' | total={value["total"]:>2} | shell={value["shell"]:>2} | <8h={value["new"]:>2} | '
+            row += f' | total={value["total"]:<2} | new={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | <8h={value["new"]:<2} | '
             row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
         res += "```"
@@ -160,9 +171,12 @@ def get_node_user_blocks(ignore_full_node=False):
 
 def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
     if job_dict := get_slum_job_dict():
+        node_dict_gpu_grouped = extract_useful_node_info_dict(get_slum_node_dict())
+        node2nodeinfo = {node_name: (node_type, node_info.gmem) for node_type, node_dict in node_dict_gpu_grouped.items() for node_name, node_info in node_dict.items()}
+
         blocks = []
         table = []
-        table += [f"job_id partition job_name user run_time tot_time priority gpu nodes(reason)".split()]
+        table += [f"job_id partition job_name user run_time tot_time priority gpu type gmem nodes(reason)".split()]
         for job_id, job_info in job_dict.items():
             if job_info["job_state"] == state and job_info["partition"] != "compute":
                 if unix_user_name is None or pwd.getpwuid(job_info["user_id"]).pw_name == unix_user_name:
@@ -176,8 +190,13 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
                                job_info['time_limit_str'],
                                str(job_info['priority']),
                                str(num_gpus),
+                               node2nodeinfo.get(job_info['batch_host'], ['']*2)[0],
+                               node2nodeinfo.get(job_info['batch_host'], ['']*2)[1],
                                f"{'' if job_info['batch_host'] is None else job_info['batch_host']} {reason}"]]
 
+        table = zip(*table)
+        table = [x for x in table if any(x[1:])]
+        table = list(zip(*table))
         if len(table) > 1:
             table[1:] = sorted(table[1:], key=lambda x: (x[1], -int(x[6]), int(x[0])))
             padding = [max(map(len, col)) for col in zip(*table)]
