@@ -15,7 +15,7 @@ def cache_for_n_seconds(seconds=1800):
     def decorator_cache_for_n_seconds(func):
         @functools.wraps(func)
         def wrapper_cache_for_n_seconds(*args, **kwargs):
-            if not hasattr(wrapper_cache_for_n_seconds, "last_call_time") or time.time() - wrapper_cache_for_n_seconds.last_call_time >= seconds:
+            if not hasattr(wrapper_cache_for_n_seconds, "last_call_value") or len(wrapper_cache_for_n_seconds.last_call_value) == 0 or time.time() - wrapper_cache_for_n_seconds.last_call_time >= seconds:
                 wrapper_cache_for_n_seconds.last_call_time = time.time()
                 wrapper_cache_for_n_seconds.last_call_value = func(*args, **kwargs)
             return wrapper_cache_for_n_seconds.last_call_value

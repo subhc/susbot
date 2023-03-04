@@ -5,7 +5,8 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.app import App
 
 from utils.log import setup_logger
-from cluster.node import get_node_info_blocks, get_node_user_blocks
+from cluster.node import get_node_info_blocks, get_node_user_blocks, get_user_jobs_blocks
+from utils.slack2unix import get_slack2unix_map
 
 logger = setup_logger()
 
@@ -15,7 +16,8 @@ app = App(token=os.environ["SLACK_BOT_TOKEN"],
 
 
 def get_home_tab_blocks(user_id):
-    return [
+    unix_user = get_slack2unix_map().get(user_id, None)
+    blocks = [
         {
             "type": "section",
             "text": {
@@ -38,7 +40,7 @@ def get_home_tab_blocks(user_id):
                 "value": "refresh_home",
                 "action_id": "action_refresh_home"
             }
-        },{
+        }, {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
@@ -51,8 +53,44 @@ def get_home_tab_blocks(user_id):
                 "type": "mrkdwn",
                 "text": "*User Summary:*",
             }
-        }, *get_node_user_blocks()
+        }, *get_node_user_blocks(),
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Waiting in Cluster:*\n",
+            }
+        }, *get_user_jobs_blocks(unix_user_name=None, state='PENDING'),
     ]
+    if unix_user:
+        blocks.extend([{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Your Jobs ({unix_user}):*\n",
+            }
+        }, *get_user_jobs_blocks(unix_user, state='RUNNING')
+            , *get_user_jobs_blocks(unix_user, state='PENDING')
+        ])
+    else:
+        blocks.extend([{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Your Jobs:*",
+            }
+        }, {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"You do not seem to have a cluster account.\n"
+                            f"Reason: Cannot find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database.\n"
+                            f"Remedy: Run `getent passwd $USER` to look for your full name in triton and set the same on Slack."
+                }
+            ]
+        }])
+    return blocks
 
 
 @app.action("action_refresh_home")

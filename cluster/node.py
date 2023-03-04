@@ -81,7 +81,7 @@ def get_node_info_blocks(ignore_full_node=False):
         for node_type, node_type_summary_dict in cluster_summary_dict.items():
             gmem, free_stats = node_type_summary_dict['gmem'], node_type_summary_dict['free_stats']
             res = "```"
-            res += f"         free_gpu   free_cpu       free_mem    users".ljust(width_rows)+"\n"
+            res += f"         free_gpu   free_cpu       free_mem    users".ljust(width_rows) + "\n"
             res += "\n".join(f"{row}".ljust(width_rows) for row in node_type_summary_dict['table_rows'])
             res += "```"
             blocks.append({
@@ -124,14 +124,14 @@ def get_node_user_blocks(ignore_full_node=False):
                 node_type = value_dict['gres'][0].split(":")[1]
                 node_type_map[key] = node_type
 
-        node_dict_user_grouped = defaultdict(lambda : defaultdict(int))
+        node_dict_user_grouped = defaultdict(lambda: defaultdict(int))
         for job_id, job_info in job_dict.items():
 
             if job_info["job_state"] == "RUNNING" and job_info["partition"] != "compute":
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += 1
                 if job_info["batch_flag"] == 0:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
-                if job_info["run_time"] < 8*60*60:
+                if job_info["run_time"] < 8 * 60 * 60:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["new"] += 1
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node_type_map[job_info["batch_host"]]] += 1
 
@@ -139,10 +139,10 @@ def get_node_user_blocks(ignore_full_node=False):
         blocks = []
         res = "```"
         len_user = max([len(user) for user in node_dict_user_grouped.keys()])
-        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], x[0])):
-            row = f"{user}".ljust(len_user+1)
-            row += f' | total={value["total"]:>2} | shell={value["shell"]:>2} | <8hrs={value["new"]:>2} | ' #if node_type in value
-            row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] >0])
+        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["shell"], x[1]["new"], x[0])):
+            row = f"{user}".ljust(len_user + 1)
+            row += f' | total={value["total"]:>2} | shell={value["shell"]:>2} | <8h={value["new"]:>2} | '
+            row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
         res += "```"
         blocks.append({
@@ -155,4 +155,55 @@ def get_node_user_blocks(ignore_full_node=False):
         return blocks
     else:
         logger.warning("No Nodes found!")
+        return []
+
+
+def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
+    if job_dict := get_slum_job_dict():
+        blocks = []
+        table = []
+        table += [f"job_id partition job_name user run_time tot_time priority gpu nodes(reason)".split()]
+        for job_id, job_info in job_dict.items():
+            if job_info["job_state"] == state and job_info["partition"] != "compute":
+                if unix_user_name is None or pwd.getpwuid(job_info["user_id"]).pw_name == unix_user_name:
+                    num_gpus = job_info["tres_req_str"].split(",")[-1].split("=")[-1]
+                    reason = "" if job_info["state_reason"] == 'None' else f"({job_info['state_reason']})"
+                    table += [[str(job_id),
+                               job_info['partition'],
+                               job_info['name'][:20],
+                               pwd.getpwuid(job_info["user_id"]).pw_name,
+                               job_info['run_time_str'],
+                               job_info['time_limit_str'],
+                               str(job_info['priority']),
+                               str(num_gpus),
+                               f"{'' if job_info['batch_host'] is None else job_info['batch_host']} {reason}"]]
+
+        if len(table) > 1:
+            table[1:] = sorted(table[1:], key=lambda x: (x[1], -int(x[6]), int(x[0])))
+            padding = [max(map(len, col)) for col in zip(*table)]
+            res = '```'
+            padded_table_t = [[f"{x.rjust(l)}" for x in col] for col, l in zip(zip(*table), padding)]
+            res += "\n".join(["   ".join(row) for row in zip(*padded_table_t)])
+            res += '```'
+        else:
+            res = f"No {state.lower()} jobs!"
+        blocks.extend([{
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*{state.title()} Jobs*"
+                }
+            ]
+        }, {
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": res,
+            }],
+        }])
+
+        return blocks
+    else:
+        logger.warning("job_dict is empty!")
         return []
