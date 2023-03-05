@@ -47,7 +47,9 @@ def get_slack2unix_map():
                 score += fuzz.partial_ratio(linux_fn, slack_fn) / 4
                 score += fuzz.partial_ratio(linux_sn, slack_sn) / 10
                 dic.update({slack_user['real_name']: (slack_user['id'], score)})
-                if len(dic) > 1 and score > 60:
-                    match = sorted(dic.items(), key=lambda x: -x[1][1])[0]
+        if len(dic) > 0:
+            match_ = sorted(dic.items(), key=lambda x: -x[1][1])[0]
+            if match_[1][1] > 75:
+                match = match_
         slack2unix_map.update({match[1][0]: linux_user.pw_name})
     return slack2unix_map

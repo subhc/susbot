@@ -5,12 +5,11 @@ from collections import defaultdict
 from types import SimpleNamespace
 
 from cluster.query_slurm import get_slum_node_dict, get_slum_job_dict
+from config import GPU_DISPLAY_ORDER
 from utils.log import get_logger
 from utils.utils import sizeof_fmt
 
 logger = get_logger(__name__)
-
-gpu_order = ['m40', 'p40', 'v100s', 'rtx6k', 'rtx8k', 'a4500', 'a40', 'a6000'][::-1]
 
 
 def extract_useful_node_info(value_dict):
@@ -62,7 +61,7 @@ def get_node_info_blocks(ignore_full_node=False):
                 node_user_dict[job_info["batch_host"]].add(pwd.getpwuid(job_info["user_id"]).pw_name)
 
         cluster_summary_dict = defaultdict(dict)
-        for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(gpu_order)) + gpu_order:
+        for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(GPU_DISPLAY_ORDER)) + GPU_DISPLAY_ORDER:
             node_dict = node_dict_gpu_grouped[node_type]
             gmem = None
             cluster_summary_dict[node_type] = {}
@@ -136,9 +135,9 @@ def get_node_user_blocks():
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs8"] += 1
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += 1
 
-        unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(gpu_order)
-        new_gpus = sorted(unknown_gpus) + gpu_order[:5]
-        all_gpus = sorted(unknown_gpus) + gpu_order
+        unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(GPU_DISPLAY_ORDER)
+        new_gpus = sorted(unknown_gpus) + GPU_DISPLAY_ORDER[:5]
+        all_gpus = sorted(unknown_gpus) + GPU_DISPLAY_ORDER
         g48_gpus = {k for k in all_gpus if gpu2gmem[k] == "48G"}
 
         blocks = []
@@ -152,7 +151,7 @@ def get_node_user_blocks():
 
         for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs8"], x[0])):
             row = f"{user}".ljust(len_user + 1)
-            row += f' | total={value["total"]:<2} | new={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | <8h={value["new"]:<2} | '
+            row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | <8hrs={value["hrs8"]:<2} | '
             row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
         res += "```"
@@ -176,12 +175,12 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
 
         blocks = []
         table = []
-        table += [f"job_id partition job_name user run_time tot_time priority gpu type gmem nodes(reason)".split()]
+        table += [f"job_id partition job_name user run_time total_time priority gpu type gmem nodes(reason)".split()]
         for job_id, job_info in job_dict.items():
             if job_info["job_state"] == state and job_info["partition"] != "compute":
                 if unix_user_name is None or pwd.getpwuid(job_info["user_id"]).pw_name == unix_user_name:
-                    num_gpus = job_info["tres_req_str"].split(",")[-1].split("=")[-1]
-                    reason = "" if job_info["state_reason"] == 'None' else f"({job_info['state_reason']})"
+                    num_gpus = sum([int(req_str.split("=")[-1]) for req_str in job_info["tres_req_str"].split(",") if req_str.startswith("gres/gpu")])
+                    reason = "" if job_info["state_reason"] == 'None' else f"({job_info['state_reason']})"[:20]
                     table += [[str(job_id),
                                job_info['partition'],
                                job_info['name'][:20],
@@ -193,10 +192,11 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
                                node2nodeinfo.get(job_info['batch_host'], ['']*2)[0],
                                node2nodeinfo.get(job_info['batch_host'], ['']*2)[1],
                                f"{'' if job_info['batch_host'] is None else job_info['batch_host']} {reason}"]]
-
+        # remove empty columns
         table = zip(*table)
         table = [x for x in table if any(x[1:])]
         table = list(zip(*table))
+
         if len(table) > 1:
             table[1:] = sorted(table[1:], key=lambda x: (x[1], -int(x[6]), int(x[0])))
             padding = [max(map(len, col)) for col in zip(*table)]

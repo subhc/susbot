@@ -4,11 +4,12 @@ from datetime import datetime
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.app import App
 
+import config
 from utils.log import setup_logger
 from cluster.node import get_node_info_blocks, get_node_user_blocks, get_user_jobs_blocks
 from utils.slack2unix import get_slack2unix_map
 
-logger = setup_logger()
+logger = setup_logger(output=config.LOGGER_OUTPUT, level=config.LOGGER_LEVEL)
 
 app = App(token=os.environ["SLACK_BOT_TOKEN"],
           signing_secret=os.environ["SLACK_APP_TOKEN"],

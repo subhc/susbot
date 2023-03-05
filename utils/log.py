@@ -7,12 +7,15 @@ import os
 import sys
 import time
 from collections import Counter
+from datetime import datetime
+
 from tabulate import tabulate
 from termcolor import colored
-from iopath.common.file_io import PathManager
-
+from iopath.common.file_io import PathManager as PathManagerBase
 from config import LOGGER_PREFIX
 
+
+PathManager = PathManagerBase()
 
 def get_logger(name):
     if name != '' and not name.startswith(f'{LOGGER_PREFIX}.'):
@@ -43,7 +46,7 @@ class _ColorfulFormatter(logging.Formatter):
 
 @functools.lru_cache()  # so that calling setup_logger multiple times won't add many handlers
 def setup_logger(
-        output=None, distributed_rank=0, *, color=True, name=LOGGER_PREFIX, abbrev_name=None
+        output=None, level=logging.INFO, distributed_rank=0, *, color=True, name=LOGGER_PREFIX, abbrev_name=None
 ):
     """
     Initialize the detectron2 logger and set its verbosity level to "DEBUG".
@@ -62,7 +65,7 @@ def setup_logger(
         logging.Logger: a logger
     """
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(level)
     logger.propagate = False
 
     # if abbrev_name is None:
@@ -74,10 +77,10 @@ def setup_logger(
     # stdout logging: master only
     if distributed_rank == 0:
         ch = logging.StreamHandler(stream=sys.stdout)
-        ch.setLevel(logging.DEBUG)
+        ch.setLevel(level)
         if color:
             formatter = _ColorfulFormatter(
-                colored("[%(asctime)s %(name)s]: ", "green") + "%(message)s",
+                colored("[%(asctime)s %(levelname)s %(name)s]: ", "green") + "%(message)s",
                 datefmt="%m/%d %H:%M:%S",
                 root_name=name,
                 abbrev_name=str(abbrev_name),
@@ -92,7 +95,7 @@ def setup_logger(
         if output.endswith(".txt") or output.endswith(".log"):
             filename = output
         else:
-            filename = os.path.join(output, "log.txt")
+            filename = os.path.join(output,  f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
         if distributed_rank > 0:
             filename = filename + ".rank{}".format(distributed_rank)
         PathManager.mkdirs(os.path.dirname(filename))

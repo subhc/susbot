@@ -9,6 +9,7 @@ dependencies:
   - pip:
       - geopy
       - iopath
+      - python-Levenshtein
       - slack-bolt
       - tabulate
       - termcolor
