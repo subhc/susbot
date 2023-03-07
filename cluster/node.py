@@ -1,7 +1,9 @@
 import re
 import pwd
+import time
 
 from collections import defaultdict
+from datetime import timedelta, datetime
 from types import SimpleNamespace
 
 from cluster.query_slurm import get_slum_node_dict, get_slum_job_dict
@@ -131,8 +133,8 @@ def get_node_user_blocks():
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += 1
                 if job_info["batch_flag"] == 0:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
-                if job_info["run_time"] < 8 * 60 * 60:
-                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs8"] += 1
+                if job_info["run_time"] >= 18 * 60 * 60:
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs18"] += 1
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += 1
 
         unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(GPU_DISPLAY_ORDER)
@@ -149,9 +151,9 @@ def get_node_user_blocks():
             value['new'] = new
             value['g48'] = g48
 
-        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs8"], x[0])):
+        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs18"], x[0])):
             row = f"{user}".ljust(len_user + 1)
-            row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | <8hrs={value["hrs8"]:<2} | '
+            row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | ≥18h={value["hrs18"]:<2} | '
             row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
         res += "```"
@@ -175,18 +177,27 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
 
         blocks = []
         table = []
-        table += [f"job_id partition job_name user run_time total_time priority gpu type gmem nodes(reason)".split()]
+        table += [f"job_id partition job_name user run_time total_time start_time end_time priority gpu type gmem nodes(reason)".split()]
         for job_id, job_info in job_dict.items():
             if job_info["job_state"] == state and job_info["partition"] != "compute":
                 if unix_user_name is None or pwd.getpwuid(job_info["user_id"]).pw_name == unix_user_name:
                     num_gpus = sum([int(req_str.split("=")[-1]) for req_str in job_info["tres_req_str"].split(",") if req_str.startswith("gres/gpu")])
                     reason = "" if job_info["state_reason"] == 'None' else f"({job_info['state_reason']})"[:20]
+
+                    if job_info["start_time"] != 0:
+                        start_time = time.strftime("%a %d %b %H:%M", time.gmtime(job_info["start_time"]))
+                        end_time = time.strftime("%a %d %b %H:%M", time.gmtime(job_info["end_time"]))
+                    else:
+                        start_time = "N/A"
+                        end_time = "N/A"
                     table += [[str(job_id),
                                job_info['partition'],
                                job_info['name'][:20],
                                pwd.getpwuid(job_info["user_id"]).pw_name,
                                job_info['run_time_str'],
                                job_info['time_limit_str'],
+                               start_time,
+                               end_time,
                                str(job_info['priority']),
                                str(num_gpus),
                                node2nodeinfo.get(job_info['batch_host'], ['']*2)[0],
@@ -198,7 +209,7 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
         table = list(zip(*table))
 
         if len(table) > 1:
-            table[1:] = sorted(table[1:], key=lambda x: (x[1], -int(x[6]), int(x[0])))
+            table[1:] = sorted(table[1:], key=lambda x: (x[1], -int(x[8]), int(x[0])))
             padding = [max(map(len, col)) for col in zip(*table)]
             res = '```'
             padded_table_t = [[f"{x.rjust(l)}" for x in col] for col, l in zip(zip(*table), padding)]

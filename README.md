@@ -40,3 +40,7 @@ Run it on a node with access to the cluster.
 ```commandline 
 python app.py
 ```
+
+### Acknowledgments
+- [slurm_web](https://github.com/TengdaHan/slurm_web)
+- [slurm_gpustat](https://github.com/albanie/slurm_gpustat)
