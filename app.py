@@ -91,6 +91,25 @@ def get_home_tab_blocks(user_id):
                 }
             ]
         }])
+    blocks.extend([
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": " ",
+            },
+            "accessory": {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Notes",
+                    "emoji": True
+                },
+                "value": "readme",
+                "action_id": "action_readme",
+            }
+        }]
+    )
     return blocks
 
 
@@ -144,6 +163,52 @@ def scan_cluster(ack, body):
 def say_hello_regex(message, say):
     # logger.debug(message['text'])
     say(blocks=command_cluster_stats(message["user"]))
+
+
+# Listen for a shortcut invocation
+@app.action("action_readme")
+def open_modal(ack, body, client):
+    # Acknowledge the command request
+    ack()
+    # Call views_open with the built-in client
+    client.views_open(
+        # Pass a valid trigger_id within 3 seconds of receiving it
+        trigger_id=body["trigger_id"],
+        # View payload
+        view={
+            "type": "modal",
+            # View identifier
+            "callback_id": "readme",
+            "title": {
+                "type": "plain_text",
+                "text": "Notes"
+            },
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "1. The code is here: <https://github.com/subhc/susbot|github link>"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "2. If the app is not refreshing the server most likely is down. \nRun `ls -ltra  /work/subha/apps/VGGBot/logs` and check the latest log. If it has an error at the end it's most likely down. Ping me."
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "3. If your jobs don't show up or the displayed linux username is wrong then the app has failed to find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database. \nTo fix, run `getent passwd $USER` to look for your full name in triton and set the same on Slack.\nTake a look at the account matching code <https://github.com/subhc/susbot/blob/main/utils/slack2unix.py|here>"
+                    }
+                }
+            ],
+            "type": "modal"
+        }
+    )
 
 
 if __name__ == "__main__":
