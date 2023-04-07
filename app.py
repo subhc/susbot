@@ -18,79 +18,64 @@ app = App(token=os.environ["SLACK_BOT_TOKEN"],
 
 def get_home_tab_blocks(user_id):
     unix_user = get_slack2unix_map().get(user_id, None)
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Hi <@{user_id}>* :wave: ",
-            }
-        }, {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"Last updated: {datetime.now().strftime('%m/%d/%Y, %H:%M:%S')} \n"
-            },
-            "accessory": {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "Refresh",
-                    "emoji": True
-                },
-                "value": "refresh_home",
-                "action_id": "action_refresh_home"
-            }
-        }, {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*GPU Cluster Summary:*",
-            }
-        }, *get_node_info_blocks(),
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*User Summary:*",
-            }
-        }, *get_node_user_blocks(),
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Waiting in Cluster:*\n",
-            }
-        }, *get_user_jobs_blocks(unix_user_name=None, state='PENDING'),
-    ]
+    blocks = []
     if unix_user:
-        blocks.extend([{
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Your Jobs ({unix_user}):*\n",
-            }
-        }, *get_user_jobs_blocks(unix_user, state='RUNNING')
-            , *get_user_jobs_blocks(unix_user, state='PENDING')
-        ])
-    else:
-        blocks.extend([{
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Your Jobs:*",
-            }
-        }, {
-            "type": "context",
-            "elements": [
-                {
+        blocks = [
+            {
+                "type": "section",
+                "text": {
                     "type": "mrkdwn",
-                    "text": f"You do not seem to have a cluster account.\n"
-                            f"Reason: Cannot find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database.\n"
-                            f"Remedy: Run `getent passwd $USER` to look for your full name in triton and set the same on Slack."
+                    "text": f"*Hi <@{user_id}>* :wave: ",
                 }
-            ]
-        }])
+            }, {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"Last updated: {datetime.now().strftime('%m/%d/%Y, %H:%M:%S')} \n"
+                },
+                "accessory": {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Refresh",
+                        "emoji": True
+                    },
+                    "value": "refresh_home",
+                    "action_id": "action_refresh_home"
+                }
+            }, {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*GPU Cluster Summary:*",
+                }
+            }, *get_node_info_blocks(),
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*User Summary:*",
+                }
+            }, *get_node_user_blocks("All GPUs", limit=44),
+            *get_node_user_blocks("Non-preemptible GPUs", ignore_partition=["compute", "low-prio-gpu"], limit=4),
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Your Jobs ({unix_user}):*\n",
+                }
+            }, *get_user_jobs_blocks(unix_user, state='RUNNING')
+            , *get_user_jobs_blocks(unix_user, state='PENDING'),
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Waiting in Cluster:*\n",
+                }
+            }, *get_user_jobs_blocks(unix_user_name=None, state='PENDING'),
+        ]
+    else:
+        blocks.extend(get_no_account_found_blocks())
     blocks.extend([
         {
             "type": "section",
@@ -145,13 +130,39 @@ def update_home_tab(client, event, logger):
 
 
 def command_cluster_stats(user_id):
+    unix_user = get_slack2unix_map().get(user_id, None)
+    blocks = []
+    if unix_user:
+        return [{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Hi <@{user_id}>* :wave:\nHere is the GPU availability summary ({datetime.now().strftime('%m/%d/%Y, %H:%M:%S')})",
+            }
+        }, *get_node_info_blocks()]
+    else:
+
+        return get_no_account_found_blocks()
+
+
+def get_no_account_found_blocks():
     return [{
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": f"*Hi <@{user_id}>* :wave:\nHere is the GPU availability summary ({datetime.now().strftime('%m/%d/%Y, %H:%M:%S')})",
+            "text": f"*Error*",
         }
-    }, *get_node_info_blocks()]
+    }, {
+        "type": "context",
+        "elements": [
+            {
+                "type": "mrkdwn",
+                "text": f"You do not seem to have a cluster account.\n"
+                        f"Reason: Cannot find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database.\n"
+                        f"Remedy: Run `getent passwd $USER` to look for your full name in triton and set the same on Slack."
+            }
+        ]
+    }]
 
 
 @app.command("/cluster")
@@ -195,14 +206,16 @@ def open_modal(ack, body, client):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "2. If the app is not refreshing the server most likely is down. \nRun `ls -ltra  /work/subha/apps/VGGBot/logs` and check the latest log. If it has an error at the end it's most likely down. Ping me."
+                        "text": "2. If the app is not refreshing the server most likely is down. On clicking the  `Refresh` button if an exclamation mark appears beside it the server is down. Ping me. \nIf you are curious run `ls -ltra "
+                                "/work/subha/apps/VGGBot/logs` and check the latest log "
                     }
                 },
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "3. If your jobs don't show up or the displayed linux username is wrong then the app has failed to find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database. \nTo fix, run `getent passwd $USER` to look for your full name in triton and set the same on Slack.\nTake a look at the account matching code <https://github.com/subhc/susbot/blob/main/utils/slack2unix.py|here>"
+                        "text": "3. If your jobs don't show up or the displayed linux username is wrong then the app has failed to find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database. \nTo fix, "
+                                "run `getent passwd $USER` to look for your full name in triton and set the same on Slack.\nTake a look at the account matching logic <https://github.com/subhc/susbot/blob/main/utils/slack2unix.py|here> "
                     }
                 }
             ],

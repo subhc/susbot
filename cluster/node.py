@@ -3,11 +3,10 @@ import pwd
 import time
 
 from collections import defaultdict
-from datetime import timedelta, datetime
 from types import SimpleNamespace
 
 from cluster.query_slurm import get_slum_node_dict, get_slum_job_dict
-from config import GPU_DISPLAY_ORDER
+from config import NEW_GPU_DISPLAY_ORDER, OLD_GPU_DISPLAY_ORDER
 from utils.log import get_logger
 from utils.utils import sizeof_fmt
 
@@ -54,7 +53,6 @@ def extract_useful_node_info_dict(node_dict):
 def get_node_info_blocks(ignore_full_node=False):
     if node_dict := get_slum_node_dict():
         node_dict_gpu_grouped = extract_useful_node_info_dict(node_dict)
-
         blocks = []
         job_dict = get_slum_job_dict()
         node_user_dict = defaultdict(set)
@@ -63,7 +61,9 @@ def get_node_info_blocks(ignore_full_node=False):
                 node_user_dict[job_info["batch_host"]].add(pwd.getpwuid(job_info["user_id"]).pw_name)
 
         cluster_summary_dict = defaultdict(dict)
-        for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(GPU_DISPLAY_ORDER)) + GPU_DISPLAY_ORDER:
+        gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER+ OLD_GPU_DISPLAY_ORDER if gpu in node_dict_gpu_grouped]
+
+        for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(gpu_display_order)) + gpu_display_order:
             node_dict = node_dict_gpu_grouped[node_type]
             gmem = None
             cluster_summary_dict[node_type] = {}
@@ -119,7 +119,7 @@ def get_node_info_blocks(ignore_full_node=False):
         return []
 
 
-def get_node_user_blocks():
+def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
     if job_dict := get_slum_job_dict():
         node_dict = get_slum_node_dict()
         node_dict_gpu_grouped = extract_useful_node_info_dict(node_dict)
@@ -129,22 +129,23 @@ def get_node_user_blocks():
         node_dict_user_grouped = defaultdict(lambda: defaultdict(int))
         for job_id, job_info in job_dict.items():
 
-            if job_info["job_state"] == "RUNNING" and job_info["partition"] != "compute":
+            if job_info["job_state"] == "RUNNING" and job_info["partition"] not in ignore_partition:
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += 1
                 if job_info["batch_flag"] == 0:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
                 if job_info["run_time"] >= 18 * 60 * 60:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs18"] += 1
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += 1
-
-        unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(GPU_DISPLAY_ORDER)
-        new_gpus = sorted(unknown_gpus) + GPU_DISPLAY_ORDER[:5]
-        all_gpus = sorted(unknown_gpus) + GPU_DISPLAY_ORDER
+        new_gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
+        gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER+ OLD_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
+        unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(gpu_display_order)
+        new_gpus = sorted(unknown_gpus) + new_gpu_display_order
+        all_gpus = sorted(unknown_gpus) + gpu_display_order
         g48_gpus = {k for k in all_gpus if gpu2gmem[k] == "48G"}
 
         blocks = []
         res = "```"
-        len_user = max([len(user) for user in node_dict_user_grouped.keys()])
+        len_user = max([len(user) + (0 if value["total"] <= limit else 4) for user, value in node_dict_user_grouped.items()])
         for user, value in node_dict_user_grouped.items():
             new = sum([value[gpu] for gpu in new_gpus])
             g48 = sum([value[gpu] for gpu in g48_gpus])
@@ -153,17 +154,29 @@ def get_node_user_blocks():
 
         for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs18"], x[0])):
             row = f"{user}".ljust(len_user + 1)
+            row = row if value["total"] <= limit else f"{row[:-4]} <!>"
             row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | ≥18h={value["hrs18"]:<2} | '
             row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
         res += "```"
-        blocks.append({
+        blocks.extend([
+
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*{title}*"
+                    }
+                ]
+            },
+            {
             "type": "context",
             "elements": [{
                 "type": "mrkdwn",
                 "text": res,
             }],
-        })
+        }])
         return blocks
     else:
         logger.warning("No Nodes found!")
@@ -177,7 +190,7 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
 
         blocks = []
         table = []
-        table += [f"job_id partition job_name user run_time total_time start_time end_time priority gpu type gmem nodes(reason)".split()]
+        table += [f"job_id part job_name user run_time total_time start_time end_time prio gpu type gmem nodes(reason)".split()]
         for job_id, job_info in job_dict.items():
             if job_info["job_state"] == state and job_info["partition"] != "compute":
                 if unix_user_name is None or pwd.getpwuid(job_info["user_id"]).pw_name == unix_user_name:
@@ -185,13 +198,13 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
                     reason = "" if job_info["state_reason"] == 'None' else f"({job_info['state_reason']})"[:20]
 
                     if job_info["start_time"] != 0:
-                        start_time = time.strftime("%a %d %b %H:%M", time.gmtime(job_info["start_time"]))
-                        end_time = time.strftime("%a %d %b %H:%M", time.gmtime(job_info["end_time"]))
+                        start_time = time.strftime("%d %b %H:%M", time.gmtime(job_info["start_time"]))
+                        end_time = time.strftime("%d %b %H:%M", time.gmtime(job_info["end_time"]))
                     else:
                         start_time = "N/A"
                         end_time = "N/A"
                     table += [[str(job_id),
-                               job_info['partition'],
+                               job_info['partition'].replace("low-prio", "lp"),
                                job_info['name'][:20],
                                pwd.getpwuid(job_info["user_id"]).pw_name,
                                job_info['run_time_str'],
@@ -213,7 +226,7 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
             padding = [max(map(len, col)) for col in zip(*table)]
             res = '```'
             padded_table_t = [[f"{x.rjust(l)}" for x in col] for col, l in zip(zip(*table), padding)]
-            res += "\n".join(["   ".join(row) for row in zip(*padded_table_t)])
+            res += "\n".join(["  ".join(row) for row in zip(*padded_table_t)])
             res += '```'
         else:
             res = f"No {state.lower()} jobs!"
