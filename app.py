@@ -17,9 +17,8 @@ app = App(token=os.environ["SLACK_BOT_TOKEN"],
 
 
 def get_home_tab_blocks(user_id):
-    unix_user = get_slack2unix_map().get(user_id, None)
-    blocks = []
-    if unix_user:
+    try:
+        unix_user = get_slack2unix_map().get(user_id, None)
         blocks = [
             {
                 "type": "section",
@@ -49,53 +48,60 @@ def get_home_tab_blocks(user_id):
                     "type": "mrkdwn",
                     "text": "*GPU Cluster Summary:*",
                 }
-            }, *get_node_info_blocks(),
+            }, *get_node_info_blocks()]
+
+        if unix_user:
+            blocks += [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*User Summary:*",
+                    }
+                }, *get_node_user_blocks("All GPUs", limit=44),
+                *get_node_user_blocks("Non-preemptible GPUs", ignore_partition=["compute", "low-prio-gpu"], limit=4),
+                *get_node_user_blocks("Preemptible GPUs", ignore_partition=["compute", "ddp-4way", "ddp-2way", "gpu"], limit=40),
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Your Jobs ({unix_user}):*\n",
+                    }
+                }, *get_user_jobs_blocks(unix_user, state='RUNNING')
+                , *get_user_jobs_blocks(unix_user, state='PENDING'),
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Waiting in Cluster:*\n",
+                    }
+                }, *get_user_jobs_blocks(unix_user_name=None, state='PENDING'),
+            ]
+        else:
+            blocks.extend(get_no_account_found_blocks())
+        blocks.extend([
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*User Summary:*",
-                }
-            }, *get_node_user_blocks("All GPUs", limit=44),
-            *get_node_user_blocks("Non-preemptible GPUs", ignore_partition=["compute", "low-prio-gpu"], limit=4),
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Your Jobs ({unix_user}):*\n",
-                }
-            }, *get_user_jobs_blocks(unix_user, state='RUNNING')
-            , *get_user_jobs_blocks(unix_user, state='PENDING'),
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Waiting in Cluster:*\n",
-                }
-            }, *get_user_jobs_blocks(unix_user_name=None, state='PENDING'),
-        ]
-    else:
-        blocks.extend(get_no_account_found_blocks())
-    blocks.extend([
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": " ",
-            },
-            "accessory": {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "Notes",
-                    "emoji": True
+                    "text": " ",
                 },
-                "value": "readme",
-                "action_id": "action_readme",
-            }
-        }]
-    )
-    return blocks
+                "accessory": {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Notes",
+                        "emoji": True
+                    },
+                    "value": "readme",
+                    "action_id": "action_readme",
+                }
+            }]
+        )
+        return blocks
+    except Exception as e:
+        logger.error(f"Failed to get home tab blocks: {e}")
+        return []
 
 
 @app.action("action_refresh_home")
@@ -150,7 +156,7 @@ def get_no_account_found_blocks():
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": f"*Error*",
+            "text": f"*Error:*",
         }
     }, {
         "type": "context",

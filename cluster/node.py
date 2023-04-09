@@ -133,8 +133,8 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += 1
                 if job_info["batch_flag"] == 0:
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
-                if job_info["run_time"] >= 18 * 60 * 60:
-                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs18"] += 1
+                if job_info["run_time"] >= 24 * 60 * 60:
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs24"] += 1
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += 1
         new_gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
         gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER+ OLD_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
@@ -152,10 +152,10 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
             value['new'] = new
             value['g48'] = g48
 
-        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs18"], x[0])):
+        for user, value in sorted(node_dict_user_grouped.items(), key=lambda x: (-x[1]["total"], -x[1]["g48"], -x[1]["new"], -x[1]["shell"], x[1]["hrs24"], x[0])):
             row = f"{user}".ljust(len_user + 1)
             row = row if value["total"] <= limit else f"{row[:-4]} <!>"
-            row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | ≥18h={value["hrs18"]:<2} | '
+            row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | ≥24h={value["hrs24"]:<2} | '
             row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
         res += "```"
@@ -166,7 +166,7 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": f"*{title}*"
+                        "text": f"*{title}* _(limit={limit})_"
                     }
                 ]
             },

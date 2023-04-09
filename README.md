@@ -42,5 +42,5 @@ python app.py
 ```
 
 ### Acknowledgments
-- [slurm_web](https://github.com/TengdaHan/slurm_web)
+- The cluster GUI is shameless rip-off of [slurm_web](https://github.com/TengdaHan/slurm_web). If you are looking for a web GUI for cluster profiling, check it out.
 - [slurm_gpustat](https://github.com/albanie/slurm_gpustat)
