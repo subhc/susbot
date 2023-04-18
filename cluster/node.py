@@ -130,12 +130,13 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
         for job_id, job_info in job_dict.items():
 
             if job_info["job_state"] == "RUNNING" and job_info["partition"] not in ignore_partition:
-                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += 1
+                num_gpus = sum([int(req_str.split("=")[-1]) for req_str in job_info["tres_req_str"].split(",") if req_str.startswith("gres/gpu")])
+                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += num_gpus
                 if job_info["batch_flag"] == 0:
-                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += 1
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["shell"] += num_gpus
                 if job_info["run_time"] >= 24 * 60 * 60:
-                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs24"] += 1
-                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += 1
+                    node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs24"] += num_gpus
+                node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += num_gpus
         new_gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
         gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER+ OLD_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
         unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(gpu_display_order)

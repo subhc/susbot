@@ -58,8 +58,8 @@ def get_home_tab_blocks(user_id):
                         "type": "mrkdwn",
                         "text": "*User Summary:*",
                     }
-                }, *get_node_user_blocks("All GPUs", limit=44),
-                *get_node_user_blocks("Non-preemptible GPUs", ignore_partition=["compute", "low-prio-gpu"], limit=4),
+                }, *get_node_user_blocks("All GPUs", limit=52),
+                *get_node_user_blocks("Non-preemptible GPUs", ignore_partition=["compute", "low-prio-gpu"], limit=12),
                 *get_node_user_blocks("Preemptible GPUs", ignore_partition=["compute", "ddp-4way", "ddp-2way", "gpu"], limit=40),
                 {
                     "type": "section",
