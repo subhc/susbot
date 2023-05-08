@@ -221,31 +221,40 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
         table = zip(*table)
         table = [x for x in table if any(x[1:])]
         table = list(zip(*table))
-
         if len(table) > 1:
             table[1:] = sorted(table[1:], key=lambda x: (x[1], -int(x[8]), int(x[0])))
             padding = [max(map(len, col)) for col in zip(*table)]
-            res = '```'
             padded_table_t = [[f"{x.rjust(l)}" for x in col] for col, l in zip(zip(*table), padding)]
-            res += "\n".join(["  ".join(row) for row in zip(*padded_table_t)])
-            res += '```'
+            table_rows_all = list(zip(*padded_table_t))
+
+            chunk_size = 75
+            res_list = []
+            for i in range(0, len(table_rows_all), chunk_size):
+                table_rows = table_rows_all[:1] + table_rows_all[i+1:i+1+chunk_size]
+                res = '```'
+                res += "\n".join(["  ".join(row) for row in table_rows])
+                res += '```'
+                res_list.append(res)
         else:
-            res = f"No {state.lower()} jobs!"
+            res_list = [f"No {state.lower()} jobs!"]
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*{state.title()} Jobs*"
+                    }
+                ]
+            }
+        )
         blocks.extend([{
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"*{state.title()} Jobs*"
-                }
-            ]
-        }, {
             "type": "context",
             "elements": [{
                 "type": "mrkdwn",
                 "text": res,
             }],
-        }])
+        } for res in res_list])
 
         return blocks
     else:
