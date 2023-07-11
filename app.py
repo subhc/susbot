@@ -1,4 +1,5 @@
 import os
+import traceback
 from datetime import datetime
 
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -99,8 +100,9 @@ def get_home_tab_blocks(user_id):
             }]
         )
         return blocks
-    except Exception as e:
-        logger.error(f"Failed to get home tab blocks: {e}")
+    except Exception:
+        logger.error(f"Failed to get home tab blocks")
+        traceback.print_exc()
         return []
 
 
@@ -131,8 +133,9 @@ def update_home_tab(client, event, logger):
                 "blocks": get_home_tab_blocks(user_id)
             }
         )
-    except Exception as e:
-        logger.error(f"Failed to publish home tab: {e}")
+    except Exception:
+        logger.error(f"Failed to publish home tab")
+        traceback.print_exc()
 
 
 def command_cluster_stats(user_id):
