@@ -54,10 +54,18 @@ def extract_useful_node_info_dict(node_dict, lp_node_info):
 
     return node_dict_gpu_grouped
 
+
 def get_lp_node_info():
     lp_node_info = defaultdict(lambda: defaultdict(int))
     if job_dict := get_slum_job_dict():
-        lp_nodes = [{k1: {'gpu': v1 // v['cpus_per_task'], 'cpu': v1, 'mem_per_cpu': v['mem_per_cpu'], 'min_memory_cpu': v['min_memory_cpu'], 'mem_per_node': v['mem_per_node'], 'min_memory_node': v['min_memory_node']} for k1, v1 in v['cpus_allocated'].items()} for k, v in job_dict.items() if v['partition'] == 'low-prio-gpu']
+        lp_nodes = [{k1: {'gpu': sum([int(req_str.split("=")[-1]) for req_str in v["tres_req_str"].split(",") if req_str.startswith("gres/gpu")]),
+                          'cpu': v1,
+                          'mem_per_cpu': v['mem_per_cpu'],
+                          'min_memory_cpu': v['min_memory_cpu'],
+                          'mem_per_node': v['mem_per_node'],
+                          'min_memory_node': v['min_memory_node']
+                          } for k1, v1 in
+                     v['cpus_allocated'].items()} for k, v in job_dict.items() if v['partition'] == 'low-prio-gpu']
 
         for lp_node_dict in lp_nodes:
             for node_name, node in lp_node_dict.items():
@@ -82,7 +90,7 @@ def get_node_info_blocks(ignore_full_node=False):
                 node_user_dict[job_info["batch_host"]].add(pwd.getpwuid(job_info["user_id"]).pw_name)
 
         cluster_summary_dict = defaultdict(dict)
-        gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER+ OLD_GPU_DISPLAY_ORDER if gpu in node_dict_gpu_grouped]
+        gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER + OLD_GPU_DISPLAY_ORDER if gpu in node_dict_gpu_grouped]
 
         for node_type in sorted(set(node_dict_gpu_grouped.keys()).difference(gpu_display_order)) + gpu_display_order:
             node_dict = node_dict_gpu_grouped[node_type]
@@ -99,8 +107,8 @@ def get_node_info_blocks(ignore_full_node=False):
                 res += f'{value.gpu_lp:>1}/{value.gpu_total:>1}    '
                 res += f'{value.cpu_free:>3}/{value.cpu_total:>3}    '
                 res += f'{value.cpu_lp:>3}/{value.cpu_total:>3}    '
-                res += f'{value.mem_lp:>3}/{value.mem_total:>3} {value.mem_unit}    '
-                res += f'{value.mem_free:>3}/{value.mem_total:>3} {value.mem_unit}    '
+                res += f'{value.mem_free:>3}/{value.mem_total:>3}{value.mem_unit}    '
+                res += f'{value.mem_lp:>3}/{value.mem_total:>3}{value.mem_unit}    '
                 res += f"{','.join(sorted(node_user_dict[key]))}" if len(node_user_dict[key]) > 0 else "--"
                 rows.append(res)
 
@@ -116,7 +124,7 @@ def get_node_info_blocks(ignore_full_node=False):
         for node_type, node_type_summary_dict in cluster_summary_dict.items():
             gmem, free_stats, lp_stats = node_type_summary_dict['gmem'], node_type_summary_dict['free_stats'], node_type_summary_dict['lp_stats']
             res = "```"
-            res += f"         free_gpu    lp_gpu   free_cpu     lp_cpu       free_mem         lp_mem    users".ljust(width_rows) + "\n"
+            res += f"         free_gpu    lp_gpu   free_cpu     lp_cpu    free_mem      lp_mem    users".ljust(width_rows) + "\n"
             res += "\n".join(f"{row}".ljust(width_rows) for row in node_type_summary_dict['table_rows'])
             res += "```"
             blocks.append({
@@ -169,7 +177,7 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
                     node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["hrs24"] += num_gpus
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name][node2nodeinfo[job_info["batch_host"]]['gpu_name']] += num_gpus
         new_gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
-        gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER+ OLD_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
+        gpu_display_order = [gpu for gpu in NEW_GPU_DISPLAY_ORDER + OLD_GPU_DISPLAY_ORDER if gpu in gpu2gmem]
         unknown_gpus = set([node2nodeinfo[k]['gpu_name'] for k in node_dict.keys() if k in node2nodeinfo]).difference(gpu_display_order)
         new_gpus = sorted(unknown_gpus) + new_gpu_display_order
         all_gpus = sorted(unknown_gpus) + gpu_display_order
@@ -203,16 +211,40 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
                 ]
             },
             {
-            "type": "context",
-            "elements": [{
-                "type": "mrkdwn",
-                "text": res,
-            }],
-        }])
+                "type": "context",
+                "elements": [{
+                    "type": "mrkdwn",
+                    "text": res,
+                }],
+            }])
         return blocks
     else:
         logger.warning("No Nodes found!")
         return []
+
+
+def get_job_usage(job_info):
+    node = [
+        {'gpu': sum([int(req_str.split("=")[-1]) for req_str in job_info["tres_req_str"].split(",") if req_str.startswith("gres/gpu")]),
+         'cpu': v1,
+         'mem_per_cpu': job_info['mem_per_cpu'],
+         'min_memory_cpu': job_info['min_memory_cpu'],
+         'mem_per_node': job_info['mem_per_node'],
+         'min_memory_node': job_info['min_memory_node']
+         } for k1, v1 in job_info['cpus_allocated'].items()]
+    usage = {}
+    if len(node) > 0:
+        for k in ['cpu', 'gpu']:
+            usage[k] = str(node[0][k])
+        if node[0]['mem_per_cpu']:
+            usage['mem'] = node[0]['min_memory_cpu'] * node[0]['gpu']
+        elif node[0]['mem_per_node']:
+            usage['mem'] = node[0]['min_memory_node']
+        usage['mem'] = sizeof_fmt(usage['mem'], with_unit=True)
+        usage['mem'] = f"{usage['mem'][0]}{usage['mem'][1]}"
+    else:
+        usage = {"cpu": None, "gpu": None, "mem": None}
+    return usage
 
 
 def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
@@ -222,7 +254,7 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
 
         blocks = []
         table = []
-        table += [f"job_id part job_name user run_time total_time start_time end_time prio gpu type gmem nodes(reason)".split()]
+        table += [f"job_id part job_name user total_time run_time start_time end_time prio gpu type gmem cpu mem nodes(reason)".split()]
         for job_id, job_info in job_dict.items():
             if job_info["job_state"] == state and job_info["partition"] != "compute":
                 if unix_user_name is None or pwd.getpwuid(job_info["user_id"]).pw_name == unix_user_name:
@@ -235,18 +267,22 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
                     else:
                         start_time = "N/A"
                         end_time = "N/A"
+                    node_info = node2nodeinfo.get(job_info['batch_host'], [''] * 2)
+                    job_usage = get_job_usage(job_info)
                     table += [[str(job_id),
                                job_info['partition'].replace("low-prio", "lp"),
                                job_info['name'][:20],
                                pwd.getpwuid(job_info["user_id"]).pw_name,
-                               job_info['run_time_str'],
                                job_info['time_limit_str'],
+                               job_info['run_time_str'],
                                start_time,
                                end_time,
                                str(job_info['priority']),
                                str(num_gpus),
-                               node2nodeinfo.get(job_info['batch_host'], ['']*2)[0],
-                               node2nodeinfo.get(job_info['batch_host'], ['']*2)[1],
+                               node_info[0],
+                               node_info[1],
+                               job_usage['cpu'],
+                               job_usage['mem'],
                                f"{'' if job_info['batch_host'] is None else job_info['batch_host']} {reason}"]]
         # remove empty columns
         table = zip(*table)
@@ -261,7 +297,7 @@ def get_user_jobs_blocks(unix_user_name, state="RUNNING"):
             chunk_size = 75
             res_list = []
             for i in range(0, len(table_rows_all), chunk_size):
-                table_rows = table_rows_all[:1] + table_rows_all[i+1:i+1+chunk_size]
+                table_rows = table_rows_all[:1] + table_rows_all[i + 1:i + 1 + chunk_size]
                 res = '```'
                 res += "\n".join(["  ".join(row) for row in table_rows])
                 res += '```'

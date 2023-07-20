@@ -3,12 +3,12 @@ import time
 
 
 # https://stackoverflow.com/a/1094933
-def sizeof_fmt(num, suffix="B", with_unit=True):
-    for unit in ["Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
+def sizeof_fmt(num, suffix="", with_unit=True):
+    for unit in ["M", "G", "T", "P", "E", "Z"]:
         if abs(num) < 1024.0:
             return (int(num), f"{unit}{suffix}") if with_unit else int(num)
         num /= 1024.0
-    return (int(num), "Yi{suffix}") if with_unit else int(num)
+    return (int(num), f"Y{suffix}") if with_unit else int(num)
 
 
 def cache_for_n_seconds(seconds=1800):
