@@ -16,11 +16,21 @@ logger = get_logger(__name__)
 def extract_useful_node_info(value_dict):
     gmem = re.findall(r"gmem\d+?G", value_dict["features"])
     gmem = gmem[0][4:] if len(gmem) > 0 else None
+    partitions = []
+    for p in ["ddp-4way", "ddp-2way", "gpu", "low-prio-gpu"]:
+        if p in value_dict["partitions"]:
+            partitions.append(p.replace("low-prio-gpu", "lp").replace("-4way", "4").replace("-2way", "2"))
+
+    state = value_dict["state"].lower()
+    state = "+".join([(x[:3].replace("dra", "drn").replace("all", "aloc") if len(x) > 3 else x) for x in state.split("+")])
+
     node_info_dict = {
         "gpu_total": int(value_dict["gres"][0].split(":")[2].split("(")[0]),
         "gpu_used": int(value_dict["gres_used"][0].split(":")[2].split("(")[0]),
         "cpu_total": int(value_dict["cpus"]),
         "cpu_used": int(value_dict["alloc_cpus"]),
+        "state": state[:8],
+        "partitions": ",".join(partitions),
         "mem_total": sizeof_fmt(value_dict["real_memory"], with_unit=False),
         "mem_used": sizeof_fmt(value_dict["alloc_mem"], with_unit=False),
         "mem_unit": sizeof_fmt(value_dict["real_memory"], with_unit=True)[1],
@@ -97,18 +107,20 @@ def get_node_info_blocks(ignore_full_node=False):
             gmem = None
             cluster_summary_dict[node_type] = {}
             rows = []
-            for key, value in sorted(node_dict.items(), key=lambda x: (-x[1].gpu_free, -x[1].gpu_lp, x[0])):
+            for key, value in sorted(node_dict.items(), key=lambda x: ([-ord(c) for c in x[1].partitions], -x[1].gpu_free, -x[1].gpu_lp, x[0])):
                 if gmem is None:
                     gmem = value.gmem
                 if ignore_full_node and value.gpu_free == 0:
                     continue
-                res = f"{key}       "
-                res += f'{value.gpu_free:>1}/{value.gpu_total:>1}       '
+                res = f"{key}    "
+                res += f'{value.partitions:>7}       '
+                res += f'{value.gpu_free:>1}/{value.gpu_total:>1}     '
                 res += f'{value.gpu_lp:>1}/{value.gpu_total:>1}    '
-                res += f'{value.cpu_free:>3}/{value.cpu_total:>3}    '
-                res += f'{value.cpu_lp:>3}/{value.cpu_total:>3}    '
-                res += f'{value.mem_free:>3}/{value.mem_total:>3}{value.mem_unit}    '
-                res += f'{value.mem_lp:>3}/{value.mem_total:>3}{value.mem_unit}    '
+                res += f'{value.cpu_free:>3}/{value.cpu_total:>3}  '
+                res += f'{value.cpu_lp:>3}/{value.cpu_total:>3}   '
+                res += f'{value.mem_free:>3}/{value.mem_total:>3}{value.mem_unit}  '
+                res += f'{value.mem_lp:>3}/{value.mem_total:>3}{value.mem_unit}  '
+                res += f'{value.state:>8}   '
                 res += f"{','.join(sorted(node_user_dict[key]))}" if len(node_user_dict[key]) > 0 else "--"
                 rows.append(res)
 
@@ -124,7 +136,7 @@ def get_node_info_blocks(ignore_full_node=False):
         for node_type, node_type_summary_dict in cluster_summary_dict.items():
             gmem, free_stats, lp_stats = node_type_summary_dict['gmem'], node_type_summary_dict['free_stats'], node_type_summary_dict['lp_stats']
             res = "```"
-            res += f"         free_gpu    lp_gpu   free_cpu     lp_cpu    free_mem      lp_mem    users".ljust(width_rows) + "\n"
+            res += f"         partition  free_gpu  lp_gpu   free_cpu   lp_cpu   free_mem    lp_mem     state   users".ljust(width_rows) + "\n"
             res += "\n".join(f"{row}".ljust(width_rows) for row in node_type_summary_dict['table_rows'])
             res += "```"
             blocks.append({
@@ -167,8 +179,8 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
 
         node_dict_user_grouped = defaultdict(lambda: defaultdict(int))
         for job_id, job_info in job_dict.items():
-
             if job_info["job_state"] == "RUNNING" and job_info["partition"] not in ignore_partition:
+
                 num_gpus = sum([int(req_str.split("=")[-1]) for req_str in job_info["tres_req_str"].split(",") if req_str.startswith("gres/gpu")])
                 node_dict_user_grouped[pwd.getpwuid(job_info["user_id"]).pw_name]["total"] += num_gpus
                 if job_info["batch_flag"] == 0:
@@ -182,10 +194,9 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
         new_gpus = sorted(unknown_gpus) + new_gpu_display_order
         all_gpus = sorted(unknown_gpus) + gpu_display_order
         g48_gpus = {k for k in all_gpus if gpu2gmem[k] == "48G"}
-
         blocks = []
-        res = "```"
-        len_user = max([len(user) + (0 if value["total"] <= limit else 4) for user, value in node_dict_user_grouped.items()])
+        res = ""
+        len_user = max([len(user) + (0 if value["total"] <= limit else 4) for user, value in node_dict_user_grouped.items()], default=15)
         for user, value in node_dict_user_grouped.items():
             new = sum([value[gpu] for gpu in new_gpus])
             g48 = sum([value[gpu] for gpu in g48_gpus])
@@ -198,7 +209,7 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
             row += f' | total={value["total"]:<2} | newer={value["new"]:<2} | 48g={value["g48"]:<2} | shell={value["shell"]:<2} | ≥24h={value["hrs24"]:<2} | '
             row += " ".join([f'{node_type}={value[node_type]}' for node_type in all_gpus if value[node_type] > 0])
             res += f"{row}   \n"
-        res += "```"
+        res += ""
         blocks.extend([
 
             {
@@ -214,7 +225,7 @@ def get_node_user_blocks(title, ignore_partition=("compute"), limit=40):
                 "type": "context",
                 "elements": [{
                     "type": "mrkdwn",
-                    "text": res,
+                    "text": "```" + res + "```" if res else "No running jobs\n",
                 }],
             }])
         return blocks

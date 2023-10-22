@@ -27,8 +27,8 @@ conda env create -f environment.yaml
 #### Install PySlurm
 Follow the instructions [here](https://github.com/PySlurm/pyslurm)
 ```commandline
-export SLURM_INCLUDE_DIR=/opt/slurm/include
-export SLURM_LIB_DIR=/opt/slurm/lib64
+export SLURM_INCLUDE_DIR=/usr/include
+export SLURM_LIB_DIR=/usr/lib64
 git clone https://github.com/PySlurm/pyslurm.git && cd pyslurm
 git checkout v23.2.0
 pip install .

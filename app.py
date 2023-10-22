@@ -61,12 +61,15 @@ def get_home_tab_blocks(user_id):
                     }
                 }, *get_node_user_blocks("All GPUs", limit=52),
                 *get_node_user_blocks("Non-preemptible GPUs", ignore_partition=["compute", "low-prio-gpu"], limit=12),
+                *get_node_user_blocks("`ddp-4way` GPUs", ignore_partition=["compute", "ddp-2way", "gpu", "low-prio-gpu"], limit=12),
+                *get_node_user_blocks("`ddp-2way` GPUs", ignore_partition=["compute", "ddp-4way",  "gpu", "low-prio-gpu"], limit=12),
+                *get_node_user_blocks("`gpu` GPUs", ignore_partition=["compute", "ddp-4way", "ddp-2way",  "low-prio-gpu"], limit=12),
                 *get_node_user_blocks("Preemptible GPUs", ignore_partition=["compute", "ddp-4way", "ddp-2way", "gpu"], limit=40),
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*Your Jobs ({unix_user}):*\n",
+                        "text": f"*Your Jobs (`{unix_user}`):*\n",
                     }
                 }, *get_user_jobs_blocks(unix_user, state='RUNNING')
                 , *get_user_jobs_blocks(unix_user, state='PENDING'),
