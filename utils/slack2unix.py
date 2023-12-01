@@ -29,13 +29,15 @@ def get_slack_users():
 @cache_for_n_seconds(seconds=24 * 60 * 60)
 def get_slack2unix_map():
     slack2unix_map = {}
+    slack2unix_map_score = {}
     slack_users = get_slack_users()
     for linux_user in pwd.getpwall():
         if linux_user.pw_uid < 100 or linux_user.pw_name.startswith('.'):
             continue
         dic = {}
-        match = (None, (None, None))
         for slack_user in slack_users:
+            if slack_user['id'] == 'U01UCDZ1RT3':
+                continue
             if 'real_name' in slack_user:
                 slack = unidecode(slack_user['real_name'].lower())
                 linux = unidecode(linux_user.pw_gecos.lower())
@@ -51,5 +53,7 @@ def get_slack2unix_map():
             match_ = sorted(dic.items(), key=lambda x: -x[1][1])[0]
             if match_[1][1] > 75:
                 match = match_
-        slack2unix_map.update({match[1][0]: linux_user.pw_name})
+                if match[1][0] not in slack2unix_map_score or (match[1][0] in slack2unix_map_score and slack2unix_map_score[match[1][0]] < match[1][1]):
+                    slack2unix_map_score.update({match[1][0]: match[1][1]})
+                    slack2unix_map.update({match[1][0]: linux_user.pw_name})
     return slack2unix_map

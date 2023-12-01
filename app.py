@@ -227,7 +227,7 @@ def open_modal(ack, body, client):
                     "text": {
                         "type": "mrkdwn",
                         "text": "3. If your jobs don't show up or the displayed linux username is wrong then the app has failed to find any account matching your Slack full name (not display name) in tritons's `/etc/passwd` database. \nTo fix, "
-                                "run `getent passwd $USER` to look for your full name in triton and set the same on Slack.\nTake a look at the account matching logic <https://github.com/subhc/susbot/blob/main/utils/slack2unix.py|here> "
+                                "run `getent passwd $USER` to look for your full name in triton and set the same on Slack. Furthermore if you have multiple Slack accounts, (maybe one from before you formally joined VGG) your linux account can get mapped to the other Slack account.\nTake a look at the account matching logic <https://github.com/subhc/susbot/blob/main/utils/slack2unix.py|here> "
                     }
                 }
             ],
